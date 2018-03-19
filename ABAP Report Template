@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link href='https://www.pragmatiqa.com/docs/ABAPSyntaxHighlighter/Final/prismABAP.css' rel='stylesheet'/>
+<script src='https://www.pragmatiqa.com/docs/ABAPSyntaxHighlighter/Final/prismABAP.js'></script>
+</head>
+<body>
+  
+<pre class="line-numbers language-abap">
+<code>
+*&---------------------------------------------------------------------*
+*& Report  ZPN_SSC_LOADSSCC
+*&
+*&---------------------------------------------------------------------*
+* DALROB_004 - 06.09.2017 - Dalle Vacche R. - Peer Network
+*              Potenziati controlli per CF/P.IVA duplicati (sia in SAP che in CLU)
+* DALROB_004.1 - 06.09.2017
+*              Modificate logiche di calcolo variabile di messaggio (CF separato da P.IVA)
+*------------------------------------------------------------------------------
+
+REPORT  zpn_ssc_loadsscc.
+
+* Definizione TABELLE
+*----------------------------
+TABLES:
+  .
+
+* Definizione COSTANTI
+*----------------------------------------------------------------------
+DATA:
+  .
+
+* Definizione TIPI
+*----------------------------------------------------------------------
+TYPE-POOLS slis.
+TYPES:
+  begin of ,
+  end   of .
+
+* Definizione VARIABILI
+*----------------------------------------------------------------------
+DATA:
+  .
+
+* Definizione SCREEN di selezione
+*----------------------------------------------------------------------
+SELECTION-SCREEN BEGIN OF BLOCK bl1 WITH FRAME  TITLE text-s01 .
+
+PARAMETERS: p_cablad LIKE knva-ablad       DEFAULT gc_ablad
+                                           MODIF ID nod.
+PARAMETERS: p_cknfak LIKE knva-knfak       DEFAULT gc_knfak
+                                           MODIF ID nod.
+SELECT-OPTIONS: s_ablad  FOR knva-ablad.
+SELECTION-SCREEN SKIP.
+
+SELECTION-SCREEN END OF BLOCK bl1.
+
+
+* Gestione EVENTI
+*----------------------------------------------------------------------
+INITIALIZATION.
+  PERFORM inizializzare_valori.
+
+* Impostare le restrizioni, vedi documentazione FM
+  CALL FUNCTION 'SELECT_OPTIONS_RESTRICT'
+   	EXPORTING
+      	   RESTRICTION                = RESTRICT
+
+AT SELECTION-SCREEN OUTPUT.
+  PERFORM modificare-screen.
+
+AT SELECTION-SCREEN ON p_vbeln.
+  PERFORM check_vbeln.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_fname.
+  PERFORM p_fname_help.
+
+* MAIN
+*----------------------------------------------------------------------
+START-OF-SELECTION.
+
+  PERFORM main.
+
+* Include per le FORM
+*----------------------------------------------------------------------
+
+* Include per i MODULI PBO
+*----------------------------------------------------------------------
+
+* Include per i MODULI PAI
+*----------------------------------------------------------------------
+
+*--
+
+*&---------------------------------------------------------------------*
+*&      Form  MODIFICARE-SCREEN
+*&---------------------------------------------------------------------*
+FORM modificare-screen .
+
+  LOOP AT SCREEN.
+    IF screen-group1 = 'NOD'.
+      screen-input = 0.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    " MODIFICARE-SCREEN
+*&---------------------------------------------------------------------*
+*&      Form  VISUALIZZARE_LISTA_ALV
+*&---------------------------------------------------------------------*
+FORM visualizzare_lista_alv .
+
+  DATA: l_i_lines     TYPE i,
+        l_c_lines(10) TYPE c,
+        l_grid_title  TYPE lvc_title,
+        la_layout     TYPE slis_layout_alv.
+
+  DESCRIBE TABLE it_knva LINES l_i_lines.
+  MOVE l_i_lines TO l_c_lines.
+  CONCATENATE  text-a01
+               l_c_lines
+  INTO         l_grid_title
+  SEPARATED BY space.
+
+  la_layout-box_fieldname = 'SEL_FLD'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_grid_title             = l_grid_title
+      i_structure_name         = 'KNVA'
+      i_callback_program       = sy-cprog
+      i_callback_pf_status_set = 'IMPOSTARE_STATI_ALV'
+      i_callback_user_command  = 'PROCESSARE_COMANDI_ALV'
+      is_layout                = la_layout
+    TABLES
+      t_outtab                 = it_knva.
+
+ENDFORM.                    " VISUALIZZARE_LISTA_ALV
+
+*&---------------------------------------------------------------------*
+*&      Form  IMPOSTARE_STATI_ALV
+*&---------------------------------------------------------------------*
+FORM impostare_stati_alv
+  USING rt_extab TYPE slis_t_extab    .
+
+  DELETE TABLE rt_extab WITH TABLE KEY fcode = '&REFRESH'.
+  SET PF-STATUS 'ZPN_CLIUPD' EXCLUDING rt_extab.
+
+ENDFORM.                    " IMPOSTARE_STATI_ALV
+*&---------------------------------------------------------------------*
+*&      Form  PROCESSARE_COMANDI_ALV
+*&---------------------------------------------------------------------*
+FORM processare_comandi_alv
+  USING r_ucomm     LIKE sy-ucomm
+        rs_selfield TYPE slis_selfield.
+
+  CASE r_ucomm.
+    WHEN 'ZPNUPD'.
+      PERFORM modificare_clienti.
+
+    WHEN OTHERS.
+
+  ENDCASE.
+
+ENDFORM.                    " PROCESSARE_COMANDI_ALV
+
+
+*&---------------------------------------------------------------------*
+*&      Form  P_KUNNR_HELP
+*&---------------------------------------------------------------------*
+FORM p_kunnr_help .
+  DATA: l_field(64) TYPE c.
+  FIELD-SYMBOLS <sf_name> TYPE kunnr.
+
+  GET CURSOR FIELD  l_field.
+
+  ASSIGN (l_field) TO <sf_name>.
+  <sf_name> = 'xxx'.
+
+ENDFORM.                    " P_KUNNR_HELP
+*&---------------------------------------------------------------------*
+*&      Form  P_FNAME_HELP
+*&---------------------------------------------------------------------*
+FORM p_fname_help .
+  DATA: e_fname TYPE eseftfront,
+  lt_ext_tab TYPE         filetable,
+  la_ext_tab TYPE LINE OF filetable.
+
+***move   'XLS' to la_ext_tab-filename.
+***append la_ext_tab  to lt_ext_tab.
+***
+**** call help
+***  CALL FUNCTION 'C13Z_FRONTEND_FILENAME_GET'
+***    EXPORTING
+***      i_window_title       = text-m01
+***      i_default_filename   = p_fname
+***      i_initial_directory  = ''
+***    IMPORTING
+***      e_filename           = e_fname
+***    TABLES
+***      I_FILE_EXTENSION_TAB = lt_ext_tab
+***    EXCEPTIONS
+***      internal_error       = 1
+***      OTHERS               = 2.
+
+* CALL METHOD CL_GUI_FRONTEND_SERVICES=>FILE_SAVE_DIALOG
+  CALL FUNCTION 'WS_FILENAME_GET'
+   EXPORTING
+     def_filename           = gc_file_ext
+*   DEF_PATH               = ' '
+*   MASK                   = ' '
+     mode                   = 'O'
+     title                  = text-m01
+   IMPORTING
+     filename               = e_fname
+*   RC                     =
+   EXCEPTIONS
+     inv_winsys             = 1
+     no_batch               = 2
+     selection_cancel       = 3
+     selection_error        = 4
+     OTHERS                 = 5
+            .
+
+  IF NOT sy-subrc IS INITIAL.
+    " nothing to do
+  ELSEIF NOT e_fname IS INITIAL.
+    p_fname = e_fname.
+  ENDIF.
+
+ENDFORM.                    " P_FNAME_HELP
+</code>
+</pre>
+
+
+</body>
+</html>
